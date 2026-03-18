@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>資産寿命シミュレータ</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{font-family:Arial;max-width:1100px;margin:20px auto}
+label{display:block;margin-top:8px}
+input[type=range]{width:100%}
+button{margin-top:12px;padding:8px 16px}
+.result{font-size:18px;margin:15px 0;font-weight:bold}
+</style>
+</head>
+
+<body>
+<h1>資産寿命シミュレータ</h1>
+
+<label>現在年齢 <input type="number" id="age" value="50"></label>
+
+<label>初期資産 <span id="assetVal"></span> 万円
+<input type="range" id="asset" min="0" max="50000" step="500" value="20000"></label>
+
+<label>リタイヤ年齢 <span id="retireVal"></span>
+<input type="range" id="retire" min="40" max="80" value="65"></label>
+
+<label>毎月貯金額（退職まで） <span id="saveVal"></span>
+<input type="range" id="save" min="0" max="50" value="5"></label>
+
+<label>退職金（万円） <span id="bonusVal"></span>
+<input type="range" id="bonus" min="0" max="5000" value="1000"></label>
+
+<label>退職後生活費（月） <span id="spendVal"></span>
+<input type="range" id="spend" min="0" max="100" value="30"></label>
+
+<label>年金（月） <span id="pensionVal"></span>
+<input type="range" id="pension" min="0" max="50" value="15"></label>
+
+<label>年金開始年齢 <span id="pensionAgeVal"></span>
+<input type="range" id="pensionAge" min="60" max="75" value="65"></label>
+
+<label>年利率 <span id="rateVal"></span>%
+<input type="range" id="rate" min="0" max="10" step="0.1" value="3"></label>
+
+<label>インフレ率 <span id="inflVal"></span>%
+<input type="range" id="infl" min="0" max="5" step="0.1" value="1"></label>
+
+<label><input type="checkbox" id="tax"> 運用益に税金（約20%）</label>
+
+<h3>住宅購入</h3>
+<label>購入年齢 <input type="number" id="homeAge" value="60"></label>
+<label>頭金（万円） <input type="number" id="down" value="1000"></label>
+<label>月返済（万円） <input type="number" id="loanPay" value="10"></label>
+<label>返済年数 <input type="number" id="loanYears" value="30"></label>
+
+<label><input type="checkbox" id="fixedScale"> 縦軸固定（±5億円）</label>
+
+<div class="result" id="result"></div>
+
+<button onclick="runMonte()">確率計算（モンテカルロ）</button>
+
+<canvas id="chart"></canvas>
+
+<script>
+const ctx=document.getElementById("chart").getContext("2d")
+let chart
+
+function updateLabels(){
+ assetVal.textContent=asset.value
+ retireVal.textContent=retire.value
+ saveVal.textContent=save.value
+ bonusVal.textContent=bonus.value
+ spendVal.textContent=spend.value
+ pensionVal.textContent=pension.value
+ pensionAgeVal.textContent=pensionAge.value
+ rateVal.textContent=rate.value
+ inflVal.textContent=infl.value
+}
+
+function neededAsset(){
+ const net = spend.value*12 - pension.value*12
+ const r = rate.value/100
+ return r>0 ? Math.round(net/r) : net*30
+}
+
+function simulate(random=false){
+ let ageV=+age.value,total=+asset.value,retireAge=+retire.value
+ let saveY=+save.value*12,bonusY=+bonus.value
+ let spendY=+spend.value*12,pensionY=+pension.value*12
+ let pensionStart=+pensionAge.value
+ let r=+rate.value/100,inflR=+infl.value/100
+ let taxOn=tax.checked
+ let homeAgeV=+homeAge.value,downV=+down.value
+ let loanPayV=+loanPay.value*12,loanYearsV=+loanYears.value
+
+ let labels=[],data=[],retireAsset=0,depletion=null
+
+ for(let a=ageV;a<=120;a++){
+   let rr=random ? r+(Math.random()-0.5)*0.3 : r
+   let gain=total*rr
+   if(taxOn && gain>0) gain*=0.8
+
+   if(a<retireAge) total += gain + saveY
+   else{
+     if(a===retireAge){retireAsset=total; total+=bonusY}
+     spendY*=1+inflR
+     let inc=a>=pensionStart?pensionY:0
+     total += gain + inc - spendY
+   }
+
+   if(a===homeAgeV) total-=downV
+   if(a>=homeAgeV && a<homeAgeV+loanYearsV) total-=loanPayV
+
+   if(total<=0 && depletion===null) depletion=a
+   labels.push(a); data.push(total)
+ }
+ return {labels,data,retireAsset,depletion}
+}
+
+function yScale(data){
+ const allPositive=data.every(v=>v>=0)
+ const allNegative=data.every(v=>v<=0)
+ if(fixedScale.checked) return {min:-50000,max:50000}
+ if(allPositive) return {min:0}
+ if(allNegative) return {max:0}
+ return {}
+}
+
+function basePlugin(s){
+ return {
+  id:"lines",
+  afterDraw(c){
+    const {ctx,scales:{x,y}}=c
+
+    const y0=y.getPixelForValue(0)
+    ctx.lineWidth=3
+    ctx.strokeStyle="black"
+    ctx.beginPath()
+    ctx.moveTo(x.left,y0)
+    ctx.lineTo(x.right,y0)
+    ctx.stroke()
+
+    if(s.depletion){
+      const px=x.getPixelForValue(s.depletion)
+      ctx.strokeStyle="red"
+      ctx.lineWidth=2
+      ctx.beginPath()
+      ctx.moveTo(px,y.top)
+      ctx.lineTo(px,y.bottom)
+      ctx.stroke()
+
+      ctx.fillStyle="red"
+      ctx.fillText(`資産枯渇年齢：${s.depletion}歳`,px+5,y.top+15)
+    }
+  }
+ }
+}
+
+function splitSeries(labels,data){
+ const pos=[],neg=[]
+ labels.forEach((a,i)=>{
+   const v=data[i]
+   if(v>=0){
+     pos.push({x:a,y:v})
+     neg.push({x:a,y:null})
+   }else{
+     pos.push({x:a,y:null})
+     neg.push({x:a,y:v})
+   }
+ })
+ return {pos,neg}
+}
+
+function drawFixed(){
+
+ updateLabels()
+ const s=simulate(false)
+
+ const fire=s.data.at(-1)>0
+ result.innerHTML =
+ `FIRE：${fire?"成立 ✅":"不成立 ❌"}<br>
+  退職時資産：約${Math.round(s.retireAsset)}万円<br>
+  資産枯渇年齢：${s.depletion?s.depletion+"歳":"なし"}<br>
+  必要資産目安：約${neededAsset()}万円`
+
+ const sp=splitSeries(s.labels,s.data)
+
+ if(chart) chart.destroy()
+
+ chart=new Chart(ctx,{
+  type:"line",
+  data:{datasets:[
+   {data:sp.pos,borderColor:"green",backgroundColor:"rgba(0,150,0,0.15)",fill:true,pointRadius:3,parsing:false},
+   {data:sp.neg,borderColor:"red",backgroundColor:"rgba(255,0,0,0.15)",fill:true,pointRadius:3,parsing:false}
+  ]},
+  options:{plugins:{legend:{display:false}},
+   scales:{
+    x:{type:"linear",min:s.labels[0],max:s.labels.at(-1),ticks:{stepSize:5},title:{display:true,text:"年齢"}},
+    y:{title:{display:true,text:"資産（万円）"},...yScale(s.data)}
+   }},
+  plugins:[basePlugin(s)]
+ })
+}
+
+function runMonte(){
+
+ const base=simulate(false)
+ const trials=60
+ let results=[],fail=0
+
+ for(let i=0;i<trials;i++){
+   const s=simulate(true)
+   if(s.data.some(v=>v<=0)) fail++
+   results.push(s.data)
+ }
+
+ const prob=Math.round(fail/trials*100)
+ result.innerHTML += `<br>破綻確率：約${prob}%`
+
+ const finals=results.map(r=>r.at(-1))
+ const best=results[finals.indexOf(Math.max(...finals))]
+ const worst=results[finals.indexOf(Math.min(...finals))]
+
+ const b=splitSeries(base.labels,best)
+ const w=splitSeries(base.labels,worst)
+
+ if(chart) chart.destroy()
+
+ chart=new Chart(ctx,{
+  type:"line",
+  data:{datasets:[
+   ...results.map(r=>({
+     data:base.labels.map((a,i)=>({x:a,y:r[i]})),
+     borderColor:"rgba(150,150,150,0.2)",
+     pointRadius:0,
+     parsing:false
+   })),
+   {data:b.pos,borderColor:"green",borderWidth:3,pointRadius:3,parsing:false},
+   {data:b.neg,borderColor:"red",borderWidth:3,pointRadius:3,parsing:false},
+   {data:w.pos,borderColor:"green",borderWidth:3,pointRadius:3,parsing:false},
+   {data:w.neg,borderColor:"red",borderWidth:3,pointRadius:3,parsing:false}
+  ]},
+  options:{plugins:{legend:{display:false}},
+   scales:{
+    x:{type:"linear",min:base.labels[0],max:base.labels.at(-1),ticks:{stepSize:5},title:{display:true,text:"年齢"}},
+    y:{title:{display:true,text:"資産（万円）"},...yScale(results.flat())}
+   }},
+  plugins:[basePlugin(base)]
+ })
+}
+
+document.querySelectorAll("input").forEach(e=>e.oninput=drawFixed)
+drawFixed()
+</script>
+
+</body>
+</html>
