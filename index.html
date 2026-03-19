@@ -4,110 +4,119 @@
 <meta charset="UTF-8">
 <title>資産寿命シミュレータ</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-h1{
-  position:fixed;
-  top:0;
-  left:50%;
-  transform:translateX(-50%);
-  width:100%;
-  max-width:1100px;
-  background:white;
-  margin:0;
-  padding:10px 0;
-  z-index:101;
+/* 1. 全体 */
+body {
+  font-family: Arial, sans-serif;
+  max-width: 1100px;
+  margin: 20px auto;
+  padding: 0 15px;  /* 両端余白追加 */
 }
 
-.preset-title{
-  margin:8px 0 5px;  /* 上下を詰める */
+/* 2. タイトル */
+h1 {
+  font-size: 1.8rem;
+  margin-bottom: 5px;
+  text-align: center; /* 中央揃えで見やすく */
 }
 
-.preset-row{
-  display:flex;
-  gap:8px;
+/* 3. グラフ固定 */
+#chart {
+  width: 100% !important;
+  height: auto !important;
+  max-height: 450px;
+  display: block;
+  margin: 0 auto 10px; /* 下に少し余白 */
 }
 
-.preset-row button{
-  flex:1;           /* 横3等分 */
-  padding:8px;      /* 少しコンパクトに */
-  font-size:14px;
+/* 4. 入力フォームスクロール領域 */
+#inputs {
+  overflow-y: auto;
+  max-height: calc(100vh - 520px);
+  padding: 0 10px 20px; /* 横余白確保 */
+  box-sizing: border-box;
 }
 
-body{
-  max-width:1100px;
-  margin:0 auto;
+/* 5. ラベル・スライダー */
+label {
+  display: block;
+  margin-top: 8px;
+  font-size: 1rem;
 }
 
-label{
-  display:block;
-  margin-top:10px;
-  font-size:14px;
+input[type=range] {
+  width: 100%;
+  height: 2rem;
+  margin-top: 3px;
 }
 
-input[type=number]{
-  width:100%;
-  padding:6px;
-  font-size:16px;
+input[type=number] {
+  width: 100px;
+  font-size: 1rem;
+  padding: 4px 6px;
 }
 
-input[type=range]{
-  width:100%;
+input[type=checkbox] {
+  transform: scale(1.3);
+  margin-right: 6px;
 }
 
-button{
-  margin-top:15px;
-  padding:12px;
-  width:100%;
-  font-size:16px;
+/* 6. ボタン */
+button {
+  margin-top: 8px;
+  padding: 0.9rem 1.8rem;
+  font-size: 1rem;
+  cursor: pointer;
 }
 
-.result{
-  font-size:16px;
-  margin:15px 0;
-  font-weight:bold;
-  line-height:1.5;
+/* 7. プリセットボタン横並び */
+.presets {
+  display: flex;
+  gap: 6px;
+  margin: 5px 0;
 }
 
-/* 👇 スマホ対応 */
-@media (max-width:600px){
-  h1{font-size:20px}
-  label{font-size:13px}
+.presets button {
+  flex: 1;
+  padding: 0.9rem 0;
+  font-size: 1rem;
 }
 
-#header{
-  position:fixed;
-  top:0;
-  left:0;
-  width:100%;
-  background:white;
-  z-index:100;
-  border-bottom:2px solid #ddd;
+/* 8. 結果表示 */
+.result {
+  font-size: 1.1rem;
+  margin: 10px 0;
+  font-weight: bold;
 }
 
-#header h1{
-  margin:0;
-  padding:10px;
-  text-align:center;
+/* 9. 固定縦スクロール制御（横スクロール防止） */
+html, body {
+  overflow-x: hidden;
 }
 
-#chartBox{
-  max-width:1100px;
-  margin:0 auto;
-  padding:80px 10px 0; /* ← 下を0にする */
+/* 10. メディアクエリ */
+
+/* タブレット向け */
+@media (max-width: 1024px) {
+  body { padding: 0 20px; }
+  h1 { font-size: 1.6rem; }
+  button { font-size: 1rem; padding: 0.9rem 1.5rem; }
+  input[type=range] { height: 1.9rem; }
+  #chart { max-height: 400px; }
 }
 
-#chart{
-  display:block;
-  margin:0;
-  padding:0;
-  max-height:300px;
+//* スマホ向け */
+@media (max-width: 480px) {
+  body { padding: 0 15px; }
+  h1 { font-size: 1.6rem; } /* タイトル大きめ */
+  button { font-size: 1.2rem; padding: 1rem 1.5rem; } /* タップしやすく文字も大きい */
+  input[type=range] { height: 2.2rem; } /* スライダーも太く */
+  input[type=number] { width: 100px; font-size: 1.1rem; } 
+  label { font-size: 1.2rem; } /* ラベル大きく */
+  .result { font-size: 1.3rem; } /* 結果文字大きめ */
+  #chart { max-height: 350px; }
 }
-
-/* 👇 ここがポイント */
-#controls{
-  margin-top:400px; /* 少し余裕持たせる（固定高さ） */
-}
-
 </style>
 </head>
 
@@ -121,7 +130,8 @@ button{
 </div>
 
 <div id="controls">
-  
+
+<div id="inputs">
 <label>現在年齢 <input type="number" id="age" value="50"></label>
 
 <label>想定寿命 <span id="lifeVal"></span>歳
@@ -153,9 +163,9 @@ button{
 
 <label>インフレ率 <span id="inflVal"></span>%
 <input type="range" id="infl" min="0" max="5" step="0.1" value="1"></label>
-
+  
 <h3 class="preset-title">プリセット</h3>
-<div class="preset-row">
+<div class="preset">
   <button onclick="presetSafe()">安全</button>
   <button onclick="presetNormal()">標準</button>
   <button onclick="presetAggressive()">攻め</button>
@@ -175,6 +185,8 @@ button{
 
 <button onclick="runMonte()">確率計算（モンテカルロ）</button>
 <button onclick="copyURL()">このシミュレーションを共有</button>
+
+</div>  
 
 </div>
 
