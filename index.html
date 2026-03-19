@@ -188,6 +188,8 @@ html, body {
 
 <div class="result" id="result"></div>
 
+<div id="topStrategies" style="margin-top:15px;"></div>
+
 <button onclick="runMonte()">確率計算（モンテカルロ）</button>
 <button onclick="copyURL()">このシミュレーションを共有</button>
 
@@ -285,7 +287,7 @@ function basePlugin(s){
         ctx.lineTo(px,y.bottom);
         ctx.stroke();
         ctx.fillStyle="black";
-        ctx.fillText(`資産枯渇年齢：${s.depletion}歳`,px+5,y.top+15);
+        ctx.fillText(`資産枯渇：${s.depletion}歳`,px+5,y.top+15);
       }
 
       // 想定寿命ライン
@@ -302,57 +304,64 @@ function basePlugin(s){
   }
 }
 
-function splitSeries(labels,data){
- const pos=[],neg=[]
- labels.forEach((a,i)=>{
-   const v=data[i]
-   if(v>=0){
-     pos.push({x:a,y:v})
-     neg.push({x:a,y:null})
-   }else{
-     pos.push({x:a,y:null})
-     neg.push({x:a,y:v})
-   }
- })
- return {pos,neg}
-}
-
-function drawFixed(){
-
- updateLabels()
- const s=simulate(false)
+function drawFixed() {
+  updateLabels();
+  const s = simulate(false);
 
   // 想定寿命でFIRE判定
   const life = +lifeExpect.value;
   const fire = s.data[life - age.value] > 0;
 
- result.innerHTML =
- `FIRE：${fire?"成立 ✅":"不成立 ❌"}<br>
-  退職時資産：約${Math.round(s.retireAsset)}万円<br>
-  退職時必要資産目安：約${neededAsset()}万円<br>
-  資産枯渇年齢：${s.depletion?s.depletion+"歳":"なし"}`
+  // 結果表示
+  result.innerHTML = `
+    FIRE：${fire ? "成立 ✅" : "不成立 ❌"}<br>
+    退職時資産：約${Math.round(s.retireAsset)}万円<br>
+    退職時必要資産目安：約${neededAsset()}万円<br>
+    資産枯渇：${s.depletion ? s.depletion + "歳" : "なし"}
+  `;
 
- const sp=splitSeries(s.labels,s.data)
+  if (chart) chart.destroy();
 
- if(chart) chart.destroy()
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      datasets: [
+        {
+          data: s.labels.map((a, i) => ({ x: a, y: s.data[i] })),
+          borderColor: "green", // 初期値。segmentで切り替え
+          backgroundColor: "rgba(0,150,0,0.2)", // 初期値
+          fill: { target: "origin" },
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: ctx => ctx.parsed.y >= 0 ? "green" : "red",
+          pointBorderColor: ctx => ctx.parsed.y >= 0 ? "green" : "red",
+          spanGaps: true,
+          parsing: false,
+          segment: {
+            borderColor: ctx => ctx.p0.parsed.y >= 0 ? "green" : "red",
+            backgroundColor: ctx => ctx.p0.parsed.y >= 0 ? "rgba(0,150,0,0.2)" : "rgba(255,0,0,0.2)",
+          }
+        }
+      ]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: "linear", min: s.labels[0], max: s.labels.at(-1), ticks: { stepSize: 5 }, title: { display: true, text: "年齢" } },
+        y: { title: { display: true, text: "資産（万円）" }, ...yScale(s.data) }
+      }
+    },
+    plugins: [basePlugin(s)]
+  });
 
- chart=new Chart(ctx,{
-  type:"line",
-  data:{datasets:[
-   {data:sp.pos,borderColor:"green",backgroundColor:"rgba(0,150,0,0.15)",fill:true,pointRadius:3,pointBackgroundColor:"green",parsing:false},
-   {data:sp.neg,borderColor:"red",backgroundColor:"rgba(255,0,0,0.15)",fill:true,pointRadius:3,pointBackgroundColor:"red",parsing:false}
-  ]},
-  options:{plugins:{legend:{display:false}},
-   scales:{
-    x:{type:"linear",min:s.labels[0],max:s.labels.at(-1),ticks:{stepSize:5},title:{display:true,text:"年齢"}},
-    y:{title:{display:true,text:"資産（万円）"},...yScale(s.data)}
-   }},
-  plugins:[basePlugin(s)]
- })
+  const candidates = generateCandidates();
+  const strategies = getTopStrategies(candidates);
+  renderStrategies(strategies);
+
 }
 
 function runMonte(){
-  const base = simulate(false);   // 固定利率
+  const base = simulate(false);
   const trials = 60;
   let results = [];
 
@@ -360,34 +369,27 @@ function runMonte(){
     results.push(simulate(true).data);
   }
 
-  const life = +lifeExpect.value; // 想定寿命
+  const life = +lifeExpect.value;
+  const fail = results.filter(r=>r[life - age.value]<=0).length;
+  const prob = Math.round(fail/trials*100);
+  const fire = base.data[life - age.value]>0;
 
-  // 想定寿命までに資産が枯渇した回数
-  const fail = results.filter(r => r[life - age.value] <= 0).length;
-  const prob = Math.round(fail / trials * 100);
-
-  // FIRE判定
-  const fire = base.data[life - age.value] > 0;
-
-// 結果表示：グラフ上の簡略表示ではなくHTMLに書く
-result.innerHTML = `
-  FIRE：${fire ? "成立 ✅" : "不成立 ❌"}<br>
-  退職時資産：約${Math.round(base.retireAsset)}万円<br>
-  退職時必要資産目安：約${neededAsset()}万円<br>
-  資産枯渇年齢：${base.depletion ? base.depletion + "歳" : "なし"}
-`;
+  result.innerHTML = `
+    FIRE：${fire?"成立 ✅":"不成立 ❌"}<br>
+    退職時資産：約${Math.round(base.retireAsset)}万円<br>
+    退職時必要資産目安：約${neededAsset()}万円<br>
+    資産枯渇：${base.depletion?base.depletion+"歳":"なし"}
+  `;
 
   const finals = results.map(r=>r.at(-1));
   const best = results[finals.indexOf(Math.max(...finals))];
   const worst = results[finals.indexOf(Math.min(...finals))];
 
-  const b = splitSeries(base.labels,best);
-  const w = splitSeries(base.labels,worst);
-
   const grayLines = results.map(r=>({
     data: base.labels.map((a,i)=>({x:a,y:r[i]})),
     borderColor:"rgba(150,150,150,0.2)",
     pointRadius:0,
+    spanGaps:true,
     parsing:false
   }));
 
@@ -395,8 +397,29 @@ result.innerHTML = `
     data: base.labels.map((a,i)=>({x:a,y:base.data[i]})),
     borderColor:"black",
     borderWidth:2,
-    pointRadius:3,
+    pointRadius:0,
     pointBackgroundColor:"black",
+    spanGaps:true,
+    parsing:false
+  };
+
+  const greenLine = {
+    data: base.labels.map((v,i)=>({x:v,y:best[i]})),
+    borderColor:"green",
+    borderWidth:2,
+    pointRadius:0,
+    pointBackgroundColor:"green",
+    spanGaps:true,
+    parsing:false
+  };
+
+  const redLine = {
+    data: base.labels.map((v,i)=>({x:v,y:worst[i]})),
+    borderColor:"red",
+    borderWidth:2,
+    pointRadius:0,
+    pointBackgroundColor:"red",
+    spanGaps:true,
     parsing:false
   };
 
@@ -405,26 +428,12 @@ result.innerHTML = `
     type:"line",
     data:{datasets:[
       ...grayLines,
-      {data:b.pos,borderColor:"green",borderWidth:3,pointRadius:3,pointBackgroundColor:"green",parsing:false},
-      {data:b.neg,borderColor:"green",borderWidth:3,pointRadius:3,pointBackgroundColor:"green",parsing:false},
-      {data:w.pos,borderColor:"red",borderWidth:3,pointRadius:3,pointBackgroundColor:"red",parsing:false},
-      {data:w.neg,borderColor:"red",borderWidth:3,pointRadius:3,pointBackgroundColor:"red",parsing:false},
+      greenLine,
+      redLine,
       blackLine
     ]},
     options:{
-      plugins:{
-        legend:{
-          display:true,
-          position:"top",
-          labels:{
-            generateLabels:chart => [
-              {text:"ベストケース",fillStyle:"green"},
-              {text:"ワーストケース",fillStyle:"red"},
-              {text:"固定利率",fillStyle:"black"}
-            ]
-          }
-        }
-      },
+      plugins:{legend:{display:false}},
       scales:{
         x:{type:"linear",min:base.labels[0],max:base.labels.at(-1),ticks:{stepSize:5},title:{display:true,text:"年齢"}},
         y:{title:{display:true,text:"資産（万円）"},...yScale(results.flat())}
@@ -437,26 +446,45 @@ result.innerHTML = `
         afterDraw(c){
           const {ctx,scales:{x,y}} = c;
 
-          // 破綻確率：左上
+          // 破綻確率：黒背景・白文字
+          ctx.font="bold 20px Arial";
+          const text = `破綻確率: ${prob}%`;
+          const padding = 6;
+          const textWidth = ctx.measureText(text).width;
+          const textHeight = 20;
+          const posX = x.left+10;
+          const posY = y.top+40;
           ctx.fillStyle="black";
-          ctx.font="18px Arial";
-          ctx.fillText(`破綻確率: ${prob}%`, x.left + 10, y.top + 20);
+          ctx.fillRect(posX-padding,posY-padding,textWidth+padding*2,textHeight+padding*2);
+          ctx.fillStyle="white";
+          ctx.fillText(text,posX,posY+textHeight/1.2);
 
-          // ラベル描画：資産枯渇年齢（X軸付近）
-          const lines = [
+          // グラフ内凡例：破綻確率下
+          const labels=[
+            {text:"ベストケース", color:"green"},
+            {text:"固定利率", color:"black"},
+            {text:"ワーストケース", color:"red"}
+          ];
+          ctx.font="14px Arial";
+          labels.forEach((l,i)=>{
+            ctx.fillStyle=l.color;
+            ctx.fillText(l.text,posX,posY+textHeight+20+i*18);
+          });
+
+          // 資産枯渇ラベル（X軸付近）
+          const lineData = [
             {data: best, color:"green"},
             {data: worst, color:"red"},
             {data: base.data, color:"black"}
           ];
-
-          lines.forEach(({data,color})=>{
+          lineData.forEach(({data,color})=>{
             const depIndex = data.findIndex(v=>v<=0);
             if(depIndex!==-1){
               const depX = x.getPixelForValue(base.labels[depIndex]);
               const depY = y.getPixelForValue(0);
-              ctx.fillStyle = color;
-              ctx.font = "12px Arial";
-              ctx.fillText(`枯渇:${base.labels[depIndex]}歳`, depX+2, depY +15);
+              ctx.fillStyle=color;
+              ctx.font="12px Arial";
+              ctx.fillText(`枯渇:${base.labels[depIndex]}歳`,depX+2,depY+15);
             }
           });
         }
@@ -541,6 +569,191 @@ function applyPreset(){
  updateLabels()
  drawFixed()
  saveToURL()
+}
+
+
+
+
+// ここから最適化用
+const optimizationConfig = {
+  variables: {
+    retire: { minDelta: -5, maxDelta: 5, step: 1 },
+    spend: { minRatio: 0.8, maxRatio: 1.1, step: 0.05 },
+    save: { minRatio: 1.0, maxRatio: 1.5, step: 0.1 },
+    rate: { minDelta: -2, maxDelta: 2, step: 0.5, min: 1, max: 7 }
+  }
+}
+
+function generateCandidates() {
+  const base = {
+    retire: +retire.value,
+    spend: +spend.value,
+    save: +save.value,
+    rate: +rate.value
+  };
+
+  const candidates = [];
+
+  // 範囲定義
+for (let r = base.retire - 5; r <= base.retire + 5; r++) {
+  for (let i = 0; i <= 6; i++) {
+    const sRatio = 0.8 + i * 0.05;
+
+    for (let j = 0; j <= 5; j++) {
+      const saveRatio = 1.0 + j * 0.1;
+
+      for (let k = 0; k <= 8; k++) {
+        const rateDelta = -2 + k * 0.5;
+
+          const newSpend = Math.round(base.spend * sRatio);
+          const newSave = Math.round(base.save * saveRatio);
+          const newRate = Math.min(7, Math.max(1, base.rate + rateDelta));
+
+          // 一時的に値を変更
+          retire.value = r;
+          spend.value = newSpend;
+          save.value = newSave;
+          rate.value = newRate;
+
+          const sim = simulate(false);
+
+          const life = +lifeExpect.value;
+          const fire = sim.data[life - age.value] > 0;
+
+          candidates.push({
+            retire: r,
+            spend: newSpend,
+            save: newSave,
+            rate: newRate,
+            fire: fire,
+            depletion: sim.depletion,
+            finalAsset: sim.data.at(-1)
+          });
+        }
+      }
+    }
+  }
+
+  // 元に戻す
+  retire.value = base.retire;
+  spend.value = base.spend;
+  save.value = base.save;
+  rate.value = base.rate;
+
+  return candidates;
+}
+
+function calcScore(c) {
+  let score = 0;
+
+  // ① FIRE失敗は重いペナルティ
+  if (!c.fire) score += 1000;
+
+  // ② 枯渇が早いほど悪い
+  if (c.depletion) score += (100 - c.depletion) * 10;
+
+  // ③ 退職遅れペナルティ
+  score += (c.retire - retire.value) * 5;
+
+  // ④ 支出削減ペナルティ
+  score += (spend.value - c.spend) * 1.5;
+
+  // ⑤ 貯金増加ペナルティ
+  score += (c.save - save.value) * 2;
+
+  // ⑥ 利回りリスクペナルティ
+  const rateDiff = c.rate - rate.value;
+  if (rateDiff > 0) {
+    score += rateDiff * rateDiff * 20; // リスクは急増
+  }
+
+  return score;
+}
+
+//多分いらない
+function groupCandidates(candidates) {
+  return {
+    safe: candidates.filter(c => c.rate <= 3.5),
+    balanced: candidates.filter(c => c.rate > 3.5 && c.rate <= 4),
+    aggressive: candidates.filter(c => c.rate > 4)
+  };
+}
+
+function getTopStrategies(candidates) {
+  candidates.forEach(c => c.score = calcScore(c));
+  candidates.sort((a, b) => a.score - b.score);
+
+  const baseRetire = +retire.value;
+  const baseRate = +rate.value;
+
+  let safe, balanced, aggressive;
+
+  for (let c of candidates) {
+
+    // 🟢 安全：遅く働く + 低リスク
+if (!safe &&
+    c.retire >= baseRetire + 1 &&
+    c.rate <= baseRate - 0.2) {
+  safe = c;
+}
+
+    // ⚖️ バランス：ほぼ現状
+if (!balanced &&
+    Math.abs(c.retire - baseRetire) <= 1 &&
+    c.rate > baseRate - 0.2 &&
+    c.rate < baseRate + 0.3) {
+  balanced = c;
+}
+
+    // 🔴 攻め：早期 + 高リスク
+if (!aggressive &&
+    c.retire <= baseRetire - 2 &&
+    c.rate >= baseRate + 0.5) {
+  aggressive = c;
+}
+
+    if (safe && balanced && aggressive) break;
+  }
+
+  return { safe, balanced, aggressive };
+}
+
+function getComment(type, s) {
+  if (type === "safe") {
+    return "長く働いてリスクを抑える堅実プラン";
+  }
+  if (type === "balanced") {
+    return "現実的で無理のないバランス型";
+  }
+  if (type === "aggressive") {
+    return "早期リタイア寄りだがリスクを伴う";
+  }
+}
+
+function renderStrategies(strategies) {
+  const el = document.getElementById("topStrategies");
+
+  function block(title, s, color, type) {
+    if (!s) return "";
+
+    return `
+      <div style="border-left:5px solid ${color}; padding:8px; margin-bottom:8px;">
+        <strong>${title}</strong><br>
+        退職：${s.retire}歳<br>
+        支出：${s.spend}万円/月<br>
+        貯金：${s.save}万円/月<br>
+        利回り：${s.rate}%<br>
+        <span style="color:#555;">${getComment(type, s)}</span>
+      </div>
+    `;
+  }
+
+  el.innerHTML = `
+    <h3>おすすめ戦略</h3>
+    ${block("🟢 安全重視", strategies.safe, "green", "safe")}
+    ${block("⚖️ バランス", strategies.balanced, "black", "balanced")}
+    ${block("🔴 攻め", strategies.aggressive, "red", "aggressive")}
+  `;
 }
 
 </script>
