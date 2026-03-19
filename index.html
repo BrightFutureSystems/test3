@@ -132,30 +132,30 @@ html, body {
 <div id="controls">
 
 <div id="inputs">
-<label>現在年齢 <input type="number" id="age" value="50"></label>
+<label>現在年齢 <input type="number" id="age" min="0" max="110" value="50"> 歳</label>
 
-<label>想定寿命 <span id="lifeVal"></span>歳
-<input type="number" id="lifeExpect" min="60" max="120" value="85"></label>
+<label>想定寿命 <span id="lifeVal"></span>
+<input type="number" id="lifeExpect" min="60" max="120" value="85"> 歳</label>
 
 <label>初期資産 <span id="assetVal"></span> 万円
 <input type="range" id="asset" min="0" max="50000" step="500" value="20000"></label>
 
-<label>リタイヤ年齢 <span id="retireVal"></span>
+<label>リタイヤ年齢 <span id="retireVal"></span> 歳
 <input type="range" id="retire" min="40" max="80" value="65"></label>
 
-<label>毎月貯金額（退職まで） <span id="saveVal"></span>
+<label>毎月貯金額（退職まで） <span id="saveVal"></span> 万円
 <input type="range" id="save" min="0" max="50" value="5"></label>
 
-<label>退職金（万円） <span id="bonusVal"></span>
+<label>退職金 <span id="bonusVal"></span> 万円
 <input type="range" id="bonus" min="0" max="5000" value="1000"></label>
 
-<label>退職後生活費（月） <span id="spendVal"></span>
+<label>退職後生活費 <span id="spendVal"></span> 万円／月
 <input type="range" id="spend" min="0" max="100" value="30"></label>
 
-<label>年金（月） <span id="pensionVal"></span>
+<label>年金 <span id="pensionVal"></span> 万円／月
 <input type="range" id="pension" min="0" max="50" value="15"></label>
 
-<label>年金開始年齢 <span id="pensionAgeVal"></span>
+<label>年金開始年齢 <span id="pensionAgeVal"></span> 歳
 <input type="range" id="pensionAge" min="60" max="75" value="65"></label>
 
 <label>年利率 <span id="rateVal"></span>%
@@ -174,10 +174,10 @@ html, body {
 <label><input type="checkbox" id="tax"> 運用益に税金（約20%）</label>
 
 <h3>住宅購入</h3>
-<label>購入年齢 <input type="number" id="homeAge" value="60"></label>
-<label>頭金（万円） <input type="number" id="down" value="1000"></label>
-<label>月返済（万円） <input type="number" id="loanPay" value="10"></label>
-<label>返済年数 <input type="number" id="loanYears" value="30"></label>
+<label>購入年齢 <input type="number" id="homeAge" min="20" max="80" value="40"> 歳</label>
+<label>頭金 <input type="number" id="down" min="0" value="1000"> 万円</label>
+<label>返済額 <input type="number" id="loanPay" min="0" value="10"> 万円／月</label>
+<label>返済年数 <input type="number" id="loanYears" min="0" value="30"> 年</label> 年
 
 <label><input type="checkbox" id="fixedScale"> 縦軸固定（±5億円）</label>
 
