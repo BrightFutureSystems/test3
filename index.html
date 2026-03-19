@@ -5,18 +5,127 @@
 <title>資産寿命シミュレータ</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body{font-family:Arial;max-width:1100px;margin:20px auto}
-label{display:block;margin-top:8px}
-input[type=range]{width:100%}
-button{margin-top:12px;padding:8px 16px}
-.result{font-size:18px;margin:15px 0;font-weight:bold}
+h1{
+  position:fixed;
+  top:0;
+  left:50%;
+  transform:translateX(-50%);
+  width:100%;
+  max-width:1100px;
+  background:white;
+  margin:0;
+  padding:10px 0;
+  z-index:101;
+}
+
+.preset-title{
+  margin:8px 0 5px;  /* 上下を詰める */
+}
+
+.preset-row{
+  display:flex;
+  gap:8px;
+}
+
+.preset-row button{
+  flex:1;           /* 横3等分 */
+  padding:8px;      /* 少しコンパクトに */
+  font-size:14px;
+}
+
+body{
+  max-width:1100px;
+  margin:0 auto;
+}
+
+label{
+  display:block;
+  margin-top:10px;
+  font-size:14px;
+}
+
+input[type=number]{
+  width:100%;
+  padding:6px;
+  font-size:16px;
+}
+
+input[type=range]{
+  width:100%;
+}
+
+button{
+  margin-top:15px;
+  padding:12px;
+  width:100%;
+  font-size:16px;
+}
+
+.result{
+  font-size:16px;
+  margin:15px 0;
+  font-weight:bold;
+  line-height:1.5;
+}
+
+/* 👇 スマホ対応 */
+@media (max-width:600px){
+  h1{font-size:20px}
+  label{font-size:13px}
+}
+
+#header{
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  background:white;
+  z-index:100;
+  border-bottom:2px solid #ddd;
+}
+
+#header h1{
+  margin:0;
+  padding:10px;
+  text-align:center;
+}
+
+#chartBox{
+  max-width:1100px;
+  margin:0 auto;
+  padding:80px 10px 0; /* ← 下を0にする */
+}
+
+#chart{
+  display:block;
+  margin:0;
+  padding:0;
+  max-height:300px;
+}
+
+/* 👇 ここがポイント */
+#controls{
+  margin-top:400px; /* 少し余裕持たせる（固定高さ） */
+}
+
 </style>
 </head>
 
 <body>
+<div id="header">
 <h1>資産寿命シミュレータ</h1>
 
+<div id="chartBox">
+  <canvas id="chart"></canvas>
+</div>
+</div>
+
+<div id="controls">
+  
 <label>現在年齢 <input type="number" id="age" value="50"></label>
+
+<label>想定寿命 <span id="lifeVal"></span>歳
+<input type="number" id="lifeExpect" min="60" max="120" value="85"></label>
 
 <label>初期資産 <span id="assetVal"></span> 万円
 <input type="range" id="asset" min="0" max="50000" step="500" value="20000"></label>
@@ -45,6 +154,13 @@ button{margin-top:12px;padding:8px 16px}
 <label>インフレ率 <span id="inflVal"></span>%
 <input type="range" id="infl" min="0" max="5" step="0.1" value="1"></label>
 
+<h3 class="preset-title">プリセット</h3>
+<div class="preset-row">
+  <button onclick="presetSafe()">安全</button>
+  <button onclick="presetNormal()">標準</button>
+  <button onclick="presetAggressive()">攻め</button>
+</div>
+
 <label><input type="checkbox" id="tax"> 運用益に税金（約20%）</label>
 
 <h3>住宅購入</h3>
@@ -58,8 +174,9 @@ button{margin-top:12px;padding:8px 16px}
 <div class="result" id="result"></div>
 
 <button onclick="runMonte()">確率計算（モンテカルロ）</button>
+<button onclick="copyURL()">このシミュレーションを共有</button>
 
-<canvas id="chart"></canvas>
+</div>
 
 <script>
 const ctx=document.getElementById("chart").getContext("2d")
@@ -127,33 +244,45 @@ function yScale(data){
 }
 
 function basePlugin(s){
- return {
-  id:"lines",
-  afterDraw(c){
-    const {ctx,scales:{x,y}}=c
+  return {
+    id:"lines",
+    afterDraw(c){
+      const {ctx,scales:{x,y}}=c
 
-    const y0=y.getPixelForValue(0)
-    ctx.lineWidth=3
-    ctx.strokeStyle="black"
-    ctx.beginPath()
-    ctx.moveTo(x.left,y0)
-    ctx.lineTo(x.right,y0)
-    ctx.stroke()
+      // 0ライン
+      const y0=y.getPixelForValue(0);
+      ctx.lineWidth=3;
+      ctx.strokeStyle="black";
+      ctx.beginPath();
+      ctx.moveTo(x.left,y0);
+      ctx.lineTo(x.right,y0);
+      ctx.stroke();
 
-    if(s.depletion){
-      const px=x.getPixelForValue(s.depletion)
-      ctx.strokeStyle="red"
-      ctx.lineWidth=2
-      ctx.beginPath()
-      ctx.moveTo(px,y.top)
-      ctx.lineTo(px,y.bottom)
-      ctx.stroke()
+      // 資産枯渇年齢
+      if(s.depletion){
+        const px=x.getPixelForValue(s.depletion);
+        ctx.strokeStyle="red";
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.moveTo(px,y.top);
+        ctx.lineTo(px,y.bottom);
+        ctx.stroke();
+        ctx.fillStyle="red";
+        ctx.fillText(`資産枯渇年齢：${s.depletion}歳`,px+5,y.top+15);
+      }
 
-      ctx.fillStyle="red"
-      ctx.fillText(`資産枯渇年齢：${s.depletion}歳`,px+5,y.top+15)
+      // 想定寿命ライン
+      const pxLife = x.getPixelForValue(+lifeExpect.value);
+      ctx.strokeStyle = "blue";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(pxLife, y.top);
+      ctx.lineTo(pxLife, y.bottom);
+      ctx.stroke();
+      ctx.fillStyle = "blue";
+      ctx.fillText(`想定寿命：${lifeExpect.value}歳`, pxLife+5, y.top+30);
     }
   }
- }
 }
 
 function splitSeries(labels,data){
@@ -176,7 +305,10 @@ function drawFixed(){
  updateLabels()
  const s=simulate(false)
 
- const fire=s.data.at(-1)>0
+  // 想定寿命でFIRE判定
+  const life = +lifeExpect.value;
+  const fire = s.data[life - age.value] > 0;
+
  result.innerHTML =
  `FIRE：${fire?"成立 ✅":"不成立 ❌"}<br>
   退職時資産：約${Math.round(s.retireAsset)}万円<br>
@@ -190,8 +322,8 @@ function drawFixed(){
  chart=new Chart(ctx,{
   type:"line",
   data:{datasets:[
-   {data:sp.pos,borderColor:"green",backgroundColor:"rgba(0,150,0,0.15)",fill:true,pointRadius:3,parsing:false},
-   {data:sp.neg,borderColor:"red",backgroundColor:"rgba(255,0,0,0.15)",fill:true,pointRadius:3,parsing:false}
+   {data:sp.pos,borderColor:"green",backgroundColor:"rgba(0,150,0,0.15)",fill:true,pointRadius:3,pointBackgroundColor:"green",parsing:false},
+   {data:sp.neg,borderColor:"red",backgroundColor:"rgba(255,0,0,0.15)",fill:true,pointRadius:3,pointBackgroundColor:"red",parsing:false}
   ]},
   options:{plugins:{legend:{display:false}},
    scales:{
@@ -203,54 +335,155 @@ function drawFixed(){
 }
 
 function runMonte(){
+  const base = simulate(false);   // 固定利率シミュレーション
+  const trials = 60;
+  let results = [];
 
- const base=simulate(false)
- const trials=60
- let results=[],fail=0
+  for(let i=0; i<trials; i++){
+    const s = simulate(true);
+    results.push(s.data);
+  }
 
- for(let i=0;i<trials;i++){
-   const s=simulate(true)
-   if(s.data.some(v=>v<=0)) fail++
-   results.push(s.data)
- }
+  const life = +lifeExpect.value; // 想定寿命
 
- const prob=Math.round(fail/trials*100)
- result.innerHTML += `<br>破綻確率：約${prob}%`
+  // 想定寿命までに資産が枯渇した回数
+  const fail = results.filter(r => r[life - age.value] <= 0).length;
+  const prob = Math.round(fail / trials * 100);
 
- const finals=results.map(r=>r.at(-1))
- const best=results[finals.indexOf(Math.max(...finals))]
- const worst=results[finals.indexOf(Math.min(...finals))]
+  // FIRE判定（想定寿命まで残るか）
+  const fire = base.data[life - age.value] > 0;
 
- const b=splitSeries(base.labels,best)
- const w=splitSeries(base.labels,worst)
+  // 結果表示を上書き
+  result.innerHTML =
+   `FIRE：${fire?"成立 ✅":"不成立 ❌"}<br>
+    退職時資産：約${Math.round(base.retireAsset)}万円<br>
+    資産枯渇年齢：${base.depletion ? base.depletion+"歳":"なし"}<br>
+    必要資産目安：約${neededAsset()}万円<br>
+    破綻確率：約${prob}%`;
 
- if(chart) chart.destroy()
+  const finals = results.map(r=>r.at(-1));
+  const best = results[finals.indexOf(Math.max(...finals))];
+  const worst = results[finals.indexOf(Math.min(...finals))];
 
- chart=new Chart(ctx,{
-  type:"line",
-  data:{datasets:[
-   ...results.map(r=>({
-     data:base.labels.map((a,i)=>({x:a,y:r[i]})),
-     borderColor:"rgba(150,150,150,0.2)",
-     pointRadius:0,
-     parsing:false
-   })),
-   {data:b.pos,borderColor:"green",borderWidth:3,pointRadius:3,parsing:false},
-   {data:b.neg,borderColor:"red",borderWidth:3,pointRadius:3,parsing:false},
-   {data:w.pos,borderColor:"green",borderWidth:3,pointRadius:3,parsing:false},
-   {data:w.neg,borderColor:"red",borderWidth:3,pointRadius:3,parsing:false}
-  ]},
-  options:{plugins:{legend:{display:false}},
-   scales:{
-    x:{type:"linear",min:base.labels[0],max:base.labels.at(-1),ticks:{stepSize:5},title:{display:true,text:"年齢"}},
-    y:{title:{display:true,text:"資産（万円）"},...yScale(results.flat())}
-   }},
-  plugins:[basePlugin(base)]
- })
+  const b = splitSeries(base.labels, best);
+  const w = splitSeries(base.labels, worst);
+
+  const grayLines = results.map(r=>({
+    data: base.labels.map((a,i)=>({x:a,y:r[i]})),
+    borderColor:"rgba(150,150,150,0.2)",
+    pointRadius:0,
+    parsing:false
+  }));
+
+  const blackLine = {
+    data: base.labels.map((a,i)=>({x:a,y:base.data[i]})),
+    borderColor:"black",
+    borderWidth:2,
+    pointRadius:3,
+    pointBackgroundColor:"black",
+    parsing:false
+  };
+
+  if(chart) chart.destroy();
+  chart = new Chart(ctx,{
+    type:"line",
+    data:{datasets:[
+      ...grayLines,         // 一番下に描画（最初に）
+      {data:b.pos,borderColor:"green",borderWidth:3,pointRadius:3,pointBackgroundColor:"green",parsing:false},
+      {data:b.neg,borderColor:"green",borderWidth:3,pointRadius:3,pointBackgroundColor:"green",parsing:false},
+      {data:w.pos,borderColor:"red",borderWidth:3,pointRadius:3,pointBackgroundColor:"red",parsing:false},
+      {data:w.neg,borderColor:"red",borderWidth:3,pointWidth:3,pointBackgroundColor:"red",parsing:false},
+      blackLine             // 固定利率の黒線も最後に追加（マーカー付き）
+    ]},
+    options:{
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{type:"linear",min:base.labels[0],max:base.labels.at(-1),ticks:{stepSize:5},title:{display:true,text:"年齢"}},
+        y:{title:{display:true,text:"資産（万円）"},...yScale(results.flat())}
+      }
+    },
+    plugins:[basePlugin(base)]
+  })
 }
 
-document.querySelectorAll("input").forEach(e=>e.oninput=drawFixed)
+document.querySelectorAll("input").forEach(e=>e.oninput=()=>{
+ drawFixed()
+ saveToURL()
+})
 drawFixed()
+
+// URLから復元
+function loadFromURL(){
+ const p=new URLSearchParams(location.search)
+
+ if(p.get("age")) age.value=p.get("age")
+ if(p.get("asset")) asset.value=p.get("asset")
+ if(p.get("retire")) retire.value=p.get("retire")
+ if(p.get("save")) save.value=p.get("save")
+ if(p.get("bonus")) bonus.value=p.get("bonus")
+ if(p.get("spend")) spend.value=p.get("spend")
+ if(p.get("pension")) pension.value=p.get("pension")
+ if(p.get("rate")) rate.value=p.get("rate")
+ if(p.get("infl")) infl.value=p.get("infl")
+
+ updateLabels()
+}
+
+function saveToURL(){
+ const p=new URLSearchParams()
+
+ p.set("age",age.value)
+ p.set("asset",asset.value)
+ p.set("retire",retire.value)
+ p.set("save",save.value)
+ p.set("bonus",bonus.value)
+ p.set("spend",spend.value)
+ p.set("pension",pension.value)
+ p.set("rate",rate.value)
+ p.set("infl",infl.value)
+
+ history.replaceState(null,"","?"+p.toString())
+}
+
+loadFromURL()
+drawFixed()
+
+function copyURL(){
+ const url=location.href
+ navigator.clipboard.writeText(url)
+ alert("URLをコピーしました！")
+}
+
+function presetSafe(){
+ rate.value=2
+ infl.value=1
+ spend.value=25
+ save.value=10
+ applyPreset()
+}
+
+function presetNormal(){
+ rate.value=4
+ infl.value=2
+ spend.value=30
+ save.value=5
+ applyPreset()
+}
+
+function presetAggressive(){
+ rate.value=6
+ infl.value=2.5
+ spend.value=35
+ save.value=3
+ applyPreset()
+}
+
+function applyPreset(){
+ updateLabels()
+ drawFixed()
+ saveToURL()
+}
+
 </script>
 
 </body>
