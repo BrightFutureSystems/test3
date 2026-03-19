@@ -71,6 +71,11 @@ button {
 }
 
 /* 7. プリセットボタン横並び */
+.preset-title{
+  margin:15px 0 0px;  /* 上下を詰める */
+  font-size: 1.1rem;
+}
+
 .presets {
   display: flex;
   gap: 6px;
@@ -273,13 +278,13 @@ function basePlugin(s){
       // 資産枯渇年齢
       if(s.depletion){
         const px=x.getPixelForValue(s.depletion);
-        ctx.strokeStyle="red";
+        ctx.strokeStyle="black";
         ctx.lineWidth=2;
         ctx.beginPath();
         ctx.moveTo(px,y.top);
         ctx.lineTo(px,y.bottom);
         ctx.stroke();
-        ctx.fillStyle="red";
+        ctx.fillStyle="black";
         ctx.fillText(`資産枯渇年齢：${s.depletion}歳`,px+5,y.top+15);
       }
 
@@ -324,8 +329,8 @@ function drawFixed(){
  result.innerHTML =
  `FIRE：${fire?"成立 ✅":"不成立 ❌"}<br>
   退職時資産：約${Math.round(s.retireAsset)}万円<br>
-  資産枯渇年齢：${s.depletion?s.depletion+"歳":"なし"}<br>
-  必要資産目安：約${neededAsset()}万円`
+  退職時必要資産目安：約${neededAsset()}万円<br>
+  資産枯渇年齢：${s.depletion?s.depletion+"歳":"なし"}`
 
  const sp=splitSeries(s.labels,s.data)
 
@@ -347,13 +352,12 @@ function drawFixed(){
 }
 
 function runMonte(){
-  const base = simulate(false);   // 固定利率シミュレーション
+  const base = simulate(false);   // 固定利率
   const trials = 60;
   let results = [];
 
-  for(let i=0; i<trials; i++){
-    const s = simulate(true);
-    results.push(s.data);
+  for(let i=0;i<trials;i++){
+    results.push(simulate(true).data);
   }
 
   const life = +lifeExpect.value; // 想定寿命
@@ -362,23 +366,23 @@ function runMonte(){
   const fail = results.filter(r => r[life - age.value] <= 0).length;
   const prob = Math.round(fail / trials * 100);
 
-  // FIRE判定（想定寿命まで残るか）
+  // FIRE判定
   const fire = base.data[life - age.value] > 0;
 
-  // 結果表示を上書き
-  result.innerHTML =
-   `FIRE：${fire?"成立 ✅":"不成立 ❌"}<br>
-    退職時資産：約${Math.round(base.retireAsset)}万円<br>
-    資産枯渇年齢：${base.depletion ? base.depletion+"歳":"なし"}<br>
-    必要資産目安：約${neededAsset()}万円<br>
-    破綻確率：約${prob}%`;
+// 結果表示：グラフ上の簡略表示ではなくHTMLに書く
+result.innerHTML = `
+  FIRE：${fire ? "成立 ✅" : "不成立 ❌"}<br>
+  退職時資産：約${Math.round(base.retireAsset)}万円<br>
+  退職時必要資産目安：約${neededAsset()}万円<br>
+  資産枯渇年齢：${base.depletion ? base.depletion + "歳" : "なし"}
+`;
 
   const finals = results.map(r=>r.at(-1));
   const best = results[finals.indexOf(Math.max(...finals))];
   const worst = results[finals.indexOf(Math.min(...finals))];
 
-  const b = splitSeries(base.labels, best);
-  const w = splitSeries(base.labels, worst);
+  const b = splitSeries(base.labels,best);
+  const w = splitSeries(base.labels,worst);
 
   const grayLines = results.map(r=>({
     data: base.labels.map((a,i)=>({x:a,y:r[i]})),
@@ -400,22 +404,65 @@ function runMonte(){
   chart = new Chart(ctx,{
     type:"line",
     data:{datasets:[
-      ...grayLines,         // 一番下に描画（最初に）
+      ...grayLines,
       {data:b.pos,borderColor:"green",borderWidth:3,pointRadius:3,pointBackgroundColor:"green",parsing:false},
       {data:b.neg,borderColor:"green",borderWidth:3,pointRadius:3,pointBackgroundColor:"green",parsing:false},
       {data:w.pos,borderColor:"red",borderWidth:3,pointRadius:3,pointBackgroundColor:"red",parsing:false},
-      {data:w.neg,borderColor:"red",borderWidth:3,pointWidth:3,pointBackgroundColor:"red",parsing:false},
-      blackLine             // 固定利率の黒線も最後に追加（マーカー付き）
+      {data:w.neg,borderColor:"red",borderWidth:3,pointRadius:3,pointBackgroundColor:"red",parsing:false},
+      blackLine
     ]},
     options:{
-      plugins:{legend:{display:false}},
+      plugins:{
+        legend:{
+          display:true,
+          position:"top",
+          labels:{
+            generateLabels:chart => [
+              {text:"ベストケース",fillStyle:"green"},
+              {text:"ワーストケース",fillStyle:"red"},
+              {text:"固定利率",fillStyle:"black"}
+            ]
+          }
+        }
+      },
       scales:{
         x:{type:"linear",min:base.labels[0],max:base.labels.at(-1),ticks:{stepSize:5},title:{display:true,text:"年齢"}},
         y:{title:{display:true,text:"資産（万円）"},...yScale(results.flat())}
       }
     },
-    plugins:[basePlugin(base)]
-  })
+    plugins:[
+      basePlugin(base),
+      {
+        id:"monteLabel",
+        afterDraw(c){
+          const {ctx,scales:{x,y}} = c;
+
+          // 破綻確率：左上
+          ctx.fillStyle="black";
+          ctx.font="18px Arial";
+          ctx.fillText(`破綻確率: ${prob}%`, x.left + 10, y.top + 20);
+
+          // ラベル描画：資産枯渇年齢（X軸付近）
+          const lines = [
+            {data: best, color:"green"},
+            {data: worst, color:"red"},
+            {data: base.data, color:"black"}
+          ];
+
+          lines.forEach(({data,color})=>{
+            const depIndex = data.findIndex(v=>v<=0);
+            if(depIndex!==-1){
+              const depX = x.getPixelForValue(base.labels[depIndex]);
+              const depY = y.getPixelForValue(0);
+              ctx.fillStyle = color;
+              ctx.font = "12px Arial";
+              ctx.fillText(`枯渇:${base.labels[depIndex]}歳`, depX+2, depY +15);
+            }
+          });
+        }
+      }
+    ]
+  });
 }
 
 document.querySelectorAll("input").forEach(e=>e.oninput=()=>{
